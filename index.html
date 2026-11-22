@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Client Manager</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+body{margin:0;min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#fcfdfc;font-family:'Inter',sans-serif;color:#2c3e50}
+.card{background:#e8f0eb;border:1px solid #d8e3dc;border-radius:20px;box-shadow:0 20px 50px rgba(0,0,0,.1);padding:30px;width:90%;max-width:420px;text-align:center;box-sizing:border-box}
+h1{color:#1b4332;margin:0 0 20px}
+button{background:#d35400;color:#fff;border:0;border-radius:8px;padding:14px;font-weight:600;font-size:1rem;width:80%;max-width:300px;cursor:pointer;font-family:inherit}
+input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d8e3dc;border-radius:8px;font-size:1rem;margin:10px 0 14px;font-family:inherit}
+#step2{display:none}
+#msg{min-height:1.2em;margin:16px 0 0;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Client Manager</h1>
+  <div id="step1"><button id="go" type="button">Sign in with Google</button></div>
+  <div id="step2">
+    <p>Paste the link of the <strong>app file</strong> on Google Drive.</p>
+    <input id="lnk" type="text" placeholder="https://drive.google.com/file/d/...">
+    <button id="ok" type="button">Open</button>
+  </div>
+  <p id="msg"></p>
+</div>
+<script>
+// Caricatore: non contiene l'app né alcun contenuto protetto.
+// Dopo il login Google scarica l'app dal tuo Drive privato e la avvia.
+(function () {
+  var CLIENT_ID = "1024713734091-b60nh9pcbjpcnq054b2k57601n81ug49.apps.googleusercontent.com";
+  var APP_FILE_ID = "";   // opzionale: ID del file dell'app su Drive (altrimenti viene chiesto una volta sola)
+  var KEY = "grinberg_app_file", SCOPE = "https://www.googleapis.com/auth/drive", API = "https://www.googleapis.com/drive/v3";
+  var token = null, exp = 0;
+  function $(i) { return document.getElementById(i); }
+  function msg(t, bad) { var m = $('msg'); m.textContent = t || ''; m.style.color = bad ? '#922b21' : '#2c3e50'; }
+  function showLink() { $('step1').style.display = 'none'; $('step2').style.display = 'block'; $('lnk').focus(); }
+  function getToken() {
+    return new Promise(function (res, rej) {
+      if (!window.google || !google.accounts || !google.accounts.oauth2) { rej(new Error('servizio Google non caricato')); return; }
+      google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID, scope: SCOPE,
+        callback: function (r) {
+          if (r.error) { rej(new Error(r.error)); return; }
+          token = r.access_token; exp = Date.now() + (r.expires_in || 3600) * 1000 - 60000; res(token);
+        },
+        error_callback: function (e) { rej(new Error((e && e.type) || 'accesso annullato')); }
+      }).requestAccessToken({ prompt: '' });
+    });
+  }
+  function api(url) {
+    return fetch(url, { headers: { Authorization: 'Bearer ' + token } }).then(function (r) {
+      if (!r.ok) { var e = new Error('Drive ' + r.status); e.status = r.status; throw e; }
+      return r;
+    });
+  }
+  function parseId(v) {
+    v = (v || '').trim();
+    var m = v.match(/\/d\/([A-Za-z0-9_-]+)/) || v.match(/[?&]id=([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    return /^[A-Za-z0-9_-]{15,}$/.test(v) ? v : '';
+  }
+  function toDataUrl(blob) {
+    return new Promise(function (res) { var f = new FileReader(); f.onload = function () { res(f.result); }; f.onerror = function () { res(null); }; f.readAsDataURL(blob); });
+  }
+  function fail(text) { localStorage.removeItem(KEY); msg(text, true); showLink(); }
+  async function openApp(id) {
+    msg('Caricamento in corso...');
+    var html, parent;
+    try {
+      var meta = await (await api(API + '/files/' + id + '?fields=parents&supportsAllDrives=true')).json();
+      html = await (await api(API + '/files/' + id + '?alt=media&supportsAllDrives=true')).text();
+      parent = (meta.parents || [])[0];
+    } catch (e) { fail('File non trovato o non accessibile con questo account Google.'); return; }
+    if (html.indexOf('GOOGLE_CLIENT_ID') < 0 || html.indexOf('<html') < 0) { fail('Il file indicato non è l’app Client Manager.'); return; }
+    if (parent) {   // il logo, se presente nella stessa cartella dell'app, viene incorporato
+      try {
+        var q = encodeURIComponent("name='logo.png' and '" + parent + "' in parents and trashed=false");
+        var l = await (await api(API + '/files?q=' + q + '&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true')).json();
+        if (l.files && l.files[0]) {
+          var b = await (await api(API + '/files/' + l.files[0].id + '?alt=media&supportsAllDrives=true')).blob();
+          var d = await toDataUrl(new Blob([b], { type: 'image/png' }));
+          if (d) html = html.split('src="logo.png"').join('src="' + d + '"');
+        }
+      } catch (e) { /* senza logo l'app funziona comunque */ }
+    }
+    html = html.replace(/<script src="https:\/\/accounts\.google\.com\/gsi\/client"[^>]*><\/script>/, '');
+    window.__shell = { token: token, exp: exp, clientId: CLIENT_ID };
+    document.open(); document.write(html); document.close();
+  }
+  $('go').onclick = async function () {
+    msg('');
+    if (CLIENT_ID.indexOf('INSERISCI') === 0) { msg('Configurazione mancante: inserisci il CLIENT_ID nel file.', true); return; }
+    try { await getToken(); } catch (e) { msg('Accesso a Google non riuscito (' + e.message + '). Riprova.', true); return; }
+    var id = APP_FILE_ID || localStorage.getItem(KEY);
+    if (id) openApp(id); else showLink();
+  };
+  $('ok').onclick = function () {
+    var id = parseId($('lnk').value);
+    if (!id) { msg('Link non valido.', true); return; }
+    try { localStorage.setItem(KEY, id); } catch (e) {}
+    $('step2').style.display = 'none'; openApp(id);
+  };
+})();
+</script>
+</body>
+</html>
