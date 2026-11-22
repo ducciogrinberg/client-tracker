@@ -19,7 +19,7 @@ input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d8e3dc;bor
 </head>
 <body>
 <div class="card">
-  <h1>Client Manager</h1>
+  <h1>Client Tracker</h1>
   <div id="step1"><button id="go" type="button">Sign in with Google</button></div>
   <div id="step2">
     <p>Paste the link of the <strong>app file</strong> on Google Drive.</p>
@@ -76,7 +76,7 @@ input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d8e3dc;bor
       html = await (await api(API + '/files/' + id + '?alt=media&supportsAllDrives=true')).text();
       parent = (meta.parents || [])[0];
     } catch (e) { fail('File non trovato o non accessibile con questo account Google.'); return; }
-    if (html.indexOf('GOOGLE_CLIENT_ID') < 0 || html.indexOf('<html') < 0) { fail('Il file indicato non è l’app Client Manager.'); return; }
+    if (html.indexOf('GOOGLE_CLIENT_ID') < 0 || html.indexOf('<html') < 0) { fail('Il file indicato non è l’app Client Tracker.'); return; }
     if (parent) {   // il logo, se presente nella stessa cartella dell'app, viene incorporato
       try {
         var q = encodeURIComponent("name='logo.png' and '" + parent + "' in parents and trashed=false");
